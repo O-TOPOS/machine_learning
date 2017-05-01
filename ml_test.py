@@ -1,5 +1,6 @@
 import numpy as np
-from sklearn import tree, label
+from sklearn import tree #label
+import math
 import psycopg2 as ps
 
 class Database:
@@ -55,10 +56,28 @@ def get_features_and_labels(table):
 
 features, labels = get_features_and_labels('ml_dataset')
 
-le = LabelEncoder()
+# le = LabelEncoder()
 
+from sklearn.model_selection import train_test_split
+
+accuracies = []
+for i in range(10):
+    f_train, f_test, l_train, l_test = train_test_split(features, labels, test_size=0.3)
 
 # Initialise classifier
 clf = tree.DecisionTreeClassifier()
 # Train classifier with features and their corresponding labels
-clf = clf.fit(features, labels)
+clf = clf.fit(f_train, l_train)
+
+predictions = clf.predict(f_test, l_test)
+
+from sklearn.metrics import accuracy_score
+
+print(accuracy_score(l_test, predictions))
+
+accuracies.append(accuracy_score(l_test, predictions))
+
+import numpy
+
+score = numpy.mean(accuracies)
+
