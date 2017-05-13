@@ -1,6 +1,11 @@
 import numpy as np
-from sklearn import tree #label
-import math
+from sklearn import tree
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import pydotplus
+from IPython.display import Image
+import pydot
 import psycopg2 as ps
 
 class Database:
@@ -13,9 +18,9 @@ class Database:
     def connect(self):
         try:
             self.connection = ps.connect(
-                database='postgres',
+                database='edb_dev',
                 user='postgres',
-                host='localhost',
+                host='amspcgqxh5y1',
                 port=5432,
                 password='admin')
 
@@ -23,7 +28,6 @@ class Database:
 
         except Exception as e:
             print('Cannot connect to the server!')
-
 
     def close(self):
         try:
@@ -44,40 +48,108 @@ def get_table_header(table):
     db.cursor.execute("Select * FROM %s" % table)
     return [desc[0] for desc in db.cursor.description]
 
+def get_distinct_values(table, column):
+    db = Database()
+    db.connect()
+    db.cursor.execute("SELECT DISTINCT %s FROM %s" % (column, table))
+    values = []
+    data = db.cursor.fetchall()
+    for v in data:
+        values.append(v[0])
+    return values
 
-def get_features_and_labels(table):
-    features = []
-    labels = []
-    for record in get_table_data("%s" % table ):
-        features.append(record[3:])
-        labels.append(record[2])
-    return features, labels
+def get_encoder(data, idx):
+    feature_set = set() # Set of unique feature values
+    for record in data:
+        value = record[idx]
+        if value != None:
+            feature_set.add(record[idx])
+        else:
+            feature_set.add('') # Convert None to empty string
+    # Encode values
+    encoder = LabelEncoder()
+    encoder.fit(list(feature_set))
 
+    return encoder
 
-features, labels = get_features_and_labels('ml_dataset')
+def get_features_and_labels(table, id_col_idx, class_col_idx):
 
-# le = LabelEncoder()
+    # Data containing both features and labels
+    data = get_table_data("%s" % table)
 
-from sklearn.model_selection import train_test_split
+    ## Generate encoders for string features
+    encoders = {}
+    for i, v in enumerate(data[0]):
+        # if i != id_col_idx:
+        #     x_name = get_table_header()
 
-accuracies = []
-for i in range(10):
-    f_train, f_test, l_train, l_test = train_test_split(features, labels, test_size=0.3)
+        if type(data[0][i]) == str and i != id_col_idx: # select string columns and ignore the id column
+            encoders[i] = get_encoder(data, i)
 
-# Initialise classifier
-clf = tree.DecisionTreeClassifier()
-# Train classifier with features and their corresponding labels
-clf = clf.fit(f_train, l_train)
+    # Fetch and transform features and labels
+    xs = []  # list of features
+    ys = []  # list of labels
 
-predictions = clf.predict(f_test, l_test)
+    for record in data:
+        if any(value is None for value in record):
+            pass # discard any record with None numerical values
+        else:
 
-from sklearn.metrics import accuracy_score
+            x = [] # features for current record
+            y = None # label of current record
 
-print(accuracy_score(l_test, predictions))
+            for i, v in enumerate(record):
 
-accuracies.append(accuracy_score(l_test, predictions))
+                # Transforming the feature or label if it is a string
+                if i in encoders.keys():
+                    coded_value = encoders[i].transform([v,])
+                    if i != class_col_idx and i != id_col_idx:
+                        x.append(coded_value)
+                    elif i == class_col_idx:
+                        y = coded_value
 
-import numpy
+                # Otherwise just add the numerical value
+                else:
+                    if i != class_col_idx and i != id_col_idx:
+                        x.append(v)
+                    elif i == class_col_idx:
+                        y = v
 
-score = numpy.mean(accuracies)
+            # Add features and label to their lists
+            xs.append(x)
+            ys.append(y)
 
+    return xs, ys
+
+def main():
+    # Get features and labels
+    xs, ys = get_features_and_labels('test_data.ml_features', 0, 1)
+    x_names = get_table_header('test_data.ml_features')
+
+    y_names = get_distinct_values('test_data.ml_features', 'classification')
+    print(y_names)
+    # Split data in a into training dataset and a test dataset
+    x_train, x_test, y_train, y_test = train_test_split(xs, ys, test_size=0.3)
+
+    # Initialise classifier
+    clf = tree.DecisionTreeClassifier()
+
+    # Train classifier with features and their corresponding labels
+    clf = clf.fit(x_train, y_train)
+
+    # Predict the label of the test dataset
+    prediction = clf.predict(x_test)
+
+    # Compare the accuracy of the prediction with the actual labels
+    print(accuracy_score(y_test, prediction))
+
+    # Visualising tree
+    tree.export_graphviz(
+        clf,
+        out_file='tree_viz', feature_names=x_names, class_names=y_names
+
+    )
+    # graph = pydotplus.graph_from_dot_data(dot_data)
+    # graph.write_pdf("iris.pdf")
+
+main()
