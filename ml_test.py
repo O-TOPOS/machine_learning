@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from sklearn import tree
 from sklearn import cluster
 from sklearn.linear_model import LogisticRegression
